@@ -118,6 +118,7 @@ func (s *Service) handleChatlog(c *gin.Context) {
 	start, end, ok := util.TimeRangeOf(q.Time)
 	if !ok {
 		errors.Err(c, errors.InvalidArg("time"))
+		return
 	}
 	if q.Limit < 0 {
 		q.Limit = 0

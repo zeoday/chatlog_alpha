@@ -14,6 +14,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/rs/zerolog/log"
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/sjzar/chatlog/internal/errors"
 	"github.com/sjzar/chatlog/internal/model"
@@ -928,6 +929,13 @@ func (ds *DataSource) GetTableData(group, file, table string, limit, offset int,
 		return nil, err
 	}
 
+	// 为消息表创建 ZSTD 解码器（如果需要）
+	var zstdDecoder *zstd.Decoder
+	if group == "message" {
+		zstdDecoder, _ = zstd.NewReader(nil)
+		defer zstdDecoder.Close()
+	}
+
 	result := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		values := make([]interface{}, len(resCols))
@@ -946,7 +954,29 @@ func (ds *DataSource) GetTableData(group, file, table string, limit, offset int,
 			val := values[i]
 			b, ok := val.([]byte)
 			if ok {
-				v = string(b)
+				// 特殊处理消息表的 message_content 字段
+				if group == "message" && col == "message_content" && len(b) > 0 {
+					// 检查是否是 ZSTD 压缩数据 (magic bytes: 0x28, 0xb5, 0x2f, 0xfd)
+					if len(b) >= 4 && b[0] == 0x28 && b[1] == 0xb5 && b[2] == 0x2f && b[3] == 0xfd {
+						// 尝试解压 ZSTD 数据
+						if zstdDecoder != nil {
+							decompressed, err := zstdDecoder.DecodeAll(b, nil)
+							if err == nil {
+								v = string(decompressed)
+							} else {
+								v = fmt.Sprintf("[Binary data: %d bytes, ZSTD decompress failed: %v]", len(b), err)
+							}
+						} else {
+							v = fmt.Sprintf("[Binary data: %d bytes, ZSTD decoder not available]", len(b))
+						}
+					} else {
+						// 不是 ZSTD 压缩数据，尝试作为普通文本显示
+						v = string(b)
+					}
+				} else {
+					// 其他字段，直接转换为字符串
+					v = string(b)
+				}
 			} else {
 				v = val
 			}
