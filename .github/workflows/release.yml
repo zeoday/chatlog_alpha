@@ -6,6 +6,9 @@ on:
       - 'v*'
     branches:
       - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
 
 env:
   IMAGE_NAME: ${{ github.repository }}
